@@ -22,7 +22,7 @@ CHESTS = {
 
 INVENTORY_SIZE = 16
 
-TICKS_TO_WAIT = 20 * 480
+TICKS_TO_WAIT = 20 * 300 -- wait for 5m between runs
 
 CAN_MOVE_OVER = {
     ["minecraft:water"] = true
@@ -223,7 +223,7 @@ function tryUnload()
     for i = 1,INVENTORY_SIZE do
         turtle.select(i)
         local item = turtle.getItemDetail()
-        if item ~= nil and not PLANTABLE[item.name] and not FUEL[item.name] then
+        if item ~= nil and not FUEL[item.name] then
             if not turtle.drop() then
                 return false
             end
