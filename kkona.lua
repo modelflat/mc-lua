@@ -5,19 +5,24 @@ FUEL = {
 
 GATHERABLE = {
     ["minecraft:wheat"] = 7,
+    ["minecraft:carrots"] = 7,
+    ["harvestcraft:pamstrawberrycrop"] = 3,
 }
 
 PLANTABLE = {
-    ["minecraft:seed"] = true,
+    ["minecraft:wheat_seeds"] = true,
+    ["minecraft:carrot"] = true,
+    -- ["harvestcraft:strawberryitem"] = true,
 }
 
 CHESTS = {
     ["minecraft:chest"] = true,
+    ["quark:custom_chest"] = true,
 }
 
 INVENTORY_SIZE = 16
 
-TICKS_TO_WAIT = 2000
+TICKS_TO_WAIT = 20 * 480
 
 CAN_MOVE_OVER = {
     ["minecraft:water"] = true
@@ -25,7 +30,9 @@ CAN_MOVE_OVER = {
 
 REFUEL_THRESHOLD = 100
 
-DO_NOT_REFUEL = true
+REFUEL_ENABLED = true
+
+REFUEL_COUNT = 1
 
 --------------------------------------------------------------------------------
 
@@ -68,21 +75,33 @@ function findInInventory(predicate)
     return nil
 end
 
+-- test whether the block in front can be gathered
+function canGather()
+    local notAir, block = turtle.inspect()
+    if notAir and GATHERABLE[block.name] then
+        return GATHERABLE[block.name] == block.state.age
+    end
+end
+
 -- gather harvestable block and then plant something in this place
 function gatherAndPlant()
     if turtle.dig() then
-        local slotToPlant = findInInventory(function(item) return PLANTABLE[item.name] end)
+        turtle.suckUp()
+        turtle.suck()
+        turtle.suckDown()
+        local slotToPlant = findInInventory(function(item) return item ~= nil and PLANTABLE[item.name] end)
         if slotToPlant == nil then
             log("Failed to plant: nothing to plant!")
         else
             turtle.select(slotToPlant)
             local placed = turtle.place()
             if not placed then
-                log("Failed to plant: " .. turtle.getItemDetail(slotToPlant))
+                local item = turtle.getItemDetail(slotToPlant)
+                log("Failed to plant: " .. item.name)
             end
         end
     else
-        log("Failed to gather block: " .. turtle.inspect())
+        log("Failed to gather block!")
     end
 end
 
@@ -102,9 +121,9 @@ end
 -- reset turtle state
 function reset()
     log("Resetting state...")
-    PATH = {}
+    PATH = {[0] = Coord(0, 0)}
     MOVE_ID = 0
-    COORD = Tuple(0, 0)
+    COORD = Coord(0, 0)
     DIRECTION = 0
 end
 
@@ -115,23 +134,18 @@ function wait(ticks)
     os.sleep(t)
 end
 
--- test whether we can move in selected direction
-function canMove()
-    local hasBlockInFront, _ = turtle.inspect()
-    local _, block = turtle.inspectDown()
-    return not hasBlockInFront and CAN_MOVE_OVER[block.name]
-end
-
 -- change selected direction
 function rotate(dir)
     if dir == nil or dir == "right" then
         DIRECTION = (DIRECTION + 1) % 4
+        turtle.turnRight()
     elseif dir == "left" then
         if DIRECTION == 0 then
             DIRECTION = 3
         else
             DIRECTION = DIRECTION - 1
         end
+        turtle.turnLeft()
     else
         error("Unknown direction " .. dir)
     end
@@ -163,6 +177,13 @@ function move()
     end
 end
 
+-- test whether we can move in selected direction
+function canMove()
+    local hasBlockInFront, _ = turtle.inspect()
+    local _, block = turtle.inspectDown()
+    return (not hasBlockInFront) and CAN_MOVE_OVER[block.name]
+end
+
 -- find move and rotate in correct direction
 function findMove()
     if canMove() then return true end
@@ -175,18 +196,20 @@ end
 
 -- test whether we are in origin (i.e. place we started from)
 function isInOrigin()
-    return coord_eq(PATH[MOVE_ID], COORD)
+    return coord_eq(PATH[0], COORD)
 end
 
 -- search inventory for fuel and refuel with it
 function refuel()
-    local fuel = findInInventory(function (item) return FUEL[item.name] end)
+    local fuel = findInInventory(function (item) return item ~= nil and FUEL[item.name] end)
     if fuel == nil then
         return false
     else
         turtle.select(fuel)
-        log("Refueling with " .. turtle.getItemDetail())
-        return turtle.refuel()
+        local fuelItem = turtle.getItemDetail()
+        local n = math.min(REFUEL_COUNT, fuelItem.count)
+        log("Refueling with " .. fuelItem.name .. "x" .. n)
+        return turtle.refuel(n)
     end
 end
 
@@ -195,21 +218,23 @@ function needRefuel()
     return turtle.getFuelLevel() < REFUEL_THRESHOLD
 end
 
+-- try unloading items into block in front
+function tryUnload()
+    for i = 1,INVENTORY_SIZE do
+        turtle.select(i)
+        local item = turtle.getItemDetail()
+        if item ~= nil and not PLANTABLE[item.name] and not FUEL[item.name] then
+            if not turtle.drop() then
+                return false
+            end
+            log("Unloaded " .. item.name .. "x" .. item.count)
+        end
+    end
+    return true
+end
+
 -- unload products
 function unloadProducts()
-    local function tryUnload()
-        for i = 1,INVENTORY_SIZE do
-            turtle.select(i)
-            local item = turtle.getItemDetail()
-            if item ~= nil and not PLANTABLE[item] and not GATHERABLE[item] then
-                if not turtle.drop() then
-                    return false
-                end
-            end
-        end
-        return true
-    end
-
     local successfullyUnloaded = false
     for i = 1,4 do
         local f, block = turtle.inspect()
@@ -218,7 +243,6 @@ function unloadProducts()
         end
         turtle.turnRight()
     end
-
     return successfullyUnloaded
 end
 
@@ -232,6 +256,7 @@ function main()
             move()
         else
             log("Cannot move from this position!")
+            break
         end
 
         if isInOrigin() then
@@ -241,17 +266,19 @@ function main()
             end
             rotateToDirection(0)
             reset()
-            wait()
+            wait(TICKS_TO_WAIT)
         end
 
         if needRefuel() then
-            if DO_NOT_REFUEL then
-                break;
-            end
-            if refuel() then
-                log("Refueled to " .. turtle.getFuelLevel())
+            if REFUEL_ENABLED then
+                if refuel() then
+                    log("Refueled to " .. turtle.getFuelLevel())
+                else
+                    log("Failed to refuel: no fuel in inventory!")
+                end
             else
-                log("Failed to refuel: no fuel in inventory!")
+                log("Too low on fuel!")
+                break
             end
         end
     end
