@@ -7,12 +7,14 @@ GATHERABLE = {
     ["minecraft:wheat"] = 7,
     ["minecraft:carrots"] = 7,
     ["harvestcraft:pamstrawberrycrop"] = 3,
+    ["actuallyadditions:block_canola"] = 7,
 }
 
 PLANTABLE = {
     ["minecraft:wheat_seeds"] = true,
     ["minecraft:carrot"] = true,
     -- ["harvestcraft:strawberryitem"] = true,
+    ["actuallyadditions:item_canola_seed"] = true,
 }
 
 CHESTS = {
@@ -22,7 +24,7 @@ CHESTS = {
 
 INVENTORY_SIZE = 16
 
-TICKS_TO_WAIT = 20 * 300 -- wait for 5m between runs
+TICKS_TO_WAIT = 20 * 600
 
 CAN_MOVE_OVER = {
     ["minecraft:water"] = true
@@ -86,9 +88,7 @@ end
 -- gather harvestable block and then plant something in this place
 function gatherAndPlant()
     if turtle.dig() then
-        turtle.suckUp()
         turtle.suck()
-        turtle.suckDown()
         local slotToPlant = findInInventory(function(item) return item ~= nil and PLANTABLE[item.name] end)
         if slotToPlant == nil then
             log("Failed to plant: nothing to plant!")
@@ -179,9 +179,13 @@ end
 
 -- test whether we can move in selected direction
 function canMove()
-    local hasBlockInFront, _ = turtle.inspect()
+    return not turtle.detect()
+end
+
+-- test whether we are on a block we are not supposed to be on
+function movementConstraintViolated()
     local _, block = turtle.inspectDown()
-    return (not hasBlockInFront) and CAN_MOVE_OVER[block.name]
+    return not CAN_MOVE_OVER[block.name]
 end
 
 -- find move and rotate in correct direction
@@ -254,6 +258,10 @@ function main()
 
         if findMove() then
             move()
+            if movementConstraintViolated() then
+                log("Movement constraint violated -- check turtle path")
+                break
+            end
         else
             log("Cannot move from this position!")
             break
