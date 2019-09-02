@@ -14,7 +14,7 @@ GATHERABLE = {
 
 -- what seeds to plant <- priority
 PLANTABLE = {
-    ["minecraft:wheat_seeds"] = 1,
+    ["minecraft:wheat_seeds"] = 3,
     ["minecraft:carrot"] = 2,
     ["actuallyadditions:item_canola_seed"] = 1,
 }
