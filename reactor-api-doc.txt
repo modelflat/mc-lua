@@ -1,0 +1,57 @@
+Name		                Arguments		                    Return Type
+------
+getConnected		        None		                        Boolean
+    Returns true if the computer port is connected to a valid multi-block reactor.
+getActive		            None		                        Boolean
+    Returns true if the reactor is active (consuming fuel and generating power), false otherwise.
+getNumberOfControlRods		None		                        Integer
+    Returns the number of control rods attached to this reactor. This is one more than the maximum control rod index.
+getEnergyStored		        None		                        Integer
+    Returns the amount of energy stored in the multi-block reactor's internal energy buffer, in Redstone Flux (RF) units
+getFuelTemperature		    None		                        Integer
+    Returns the temperature of the multi-block reactor's fuel, in degrees Centigrade.
+getCasingTemperature		None		                        Integer
+    Returns the temperature of the multi-block reactor's casing/frame, in degrees Centigrade.
+getFuelAmount		        None		                        Integer
+    Returns the total amount of fuel contained in the reactor, in milli-buckets (mB)
+getWasteAmount		        None		                        Integer
+    Returns the total amount of waste contained in the reactor, in milli-buckets (mB)
+getFuelAmountMax		    None		                        Integer
+    Returns the total amount of fuel + waste which can be contained in the reactor at one time, in milli-buckets (mB)
+getControlRodName		    Integer: control rod index		    String
+    Returns the user-set name for the specified control rod, as a string. String is empty if the name is not set
+getControlRodLevel		    Integer: control rod index		    Integer
+    Returns an integer indicating how far the specified control rod is inserted into the reactor,
+    range is from 0 (not inserted) to 100 (fully inserted)
+getEnergyProducedLastTick	None		                        Float
+    Returns an estimate of the Redstone Flux (RF) energy generated in the past tick.
+    If the reactor is actively cooled, returns the amount of hot fluid produced in the past tick, in milli-Buckets (mB).
+getHotFluidProducedLastTick	None		                        Float
+    Returns the amount of hot fluid produced in the past tick, in milli-Buckets (mB).
+    If the reactor is passively cooled, always returns 0.
+getCoolantType		        None		                        String or Nil
+    Returns the Fluid Dictionary name of the type of fluid contained in the multi-block reactor's coolant tank,
+    or Nil if the tank is empty.
+getCoolantAmount		    None		                        Integer
+    Returns the amount of coolant fluid contained in the multi-block reactor's coolant tank, in milli-buckets (mB)
+getHotFluidType		        None		                        String or Nil
+    Returns the Fluid Dictionary name of the type of fluid contained in the multi-block reactor's hot-fluid tank,
+    or Nil if the tank is empty.
+getHotFluidAmount		    None		                        Integer
+    Returns the amount of superheated fluid contained in the multi-block reactor's hot-fluid tank, in milli-buckets (mB)
+getFuelReactivity		    None		                        Integer
+    Returns the reactivity level of the reactor's fuel. 100 = 100 percent
+getFuelConsumedLastTick		None		                        Float
+    Returns the amount of fuel consumed last tick, in milli-buckets (mB).
+    Note that fractional milliBuckets can be consumed, so this can return, for example, 0.5
+isActivelyCooled		    None		                        Boolean
+    Returns true if the multi-block reactor is in "active cooling" mode, false otherwise
+setActive		            Boolean: active?		            None
+    Sets the reactor to be active if the argument is true, or inactive if the argument is false
+setAllControlRodLevels		Integer: insertion level (0-100)	None
+    Sets all control rods to the specified insertion level. Range is from 0 (not inserted) to 100 (fully inserted)
+setControlRodLevel		    Integer: control rod index,
+                            Integer: insertion level (0-100)	None
+    Sets the specified control rod (first argument) to the specified insertion level (second argument). Insertion level range is from 0 to 100, as above.
+doEjectWaste		        None		                        None
+    Instruct the reactor to attempt to eject any waste in the reactor via its access ports. The reactor will favor access ports set to Out. 1 ingot of waste will be ejected per 1000 mB currently in the reactor. If there is less than 1000 mB of waste in the reactor, nothing will happen.
