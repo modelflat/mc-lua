@@ -1,20 +1,25 @@
+-- what to use as fuel
 FUEL = {
     ["minecraft:coal"] = true,
     ["minecraft:lava"] = true,
 }
 
+-- what blocks to gather <- age
 GATHERABLE = {
     ["minecraft:wheat"] = 7,
     ["minecraft:carrots"] = 7,
     ["harvestcraft:pamstrawberrycrop"] = 3,
+    ["actuallyadditions:block_canola"] = 7,
 }
 
+-- what seeds to plant <- priority
 PLANTABLE = {
-    ["minecraft:wheat_seeds"] = true,
-    ["minecraft:carrot"] = true,
-    -- ["harvestcraft:strawberryitem"] = true,
+    ["minecraft:wheat_seeds"] = 3,
+    ["minecraft:carrot"] = 2,
+    ["actuallyadditions:item_canola_seed"] = 1,
 }
 
+-- what to interpret as chest
 CHESTS = {
     ["minecraft:chest"] = true,
     ["quark:custom_chest"] = true,
@@ -22,7 +27,7 @@ CHESTS = {
 
 INVENTORY_SIZE = 16
 
-TICKS_TO_WAIT = 20 * 300 -- wait for 5m between runs
+TICKS_TO_WAIT = 20 * 600
 
 CAN_MOVE_OVER = {
     ["minecraft:water"] = true
@@ -75,6 +80,20 @@ function findInInventory(predicate)
     return nil
 end
 
+-- search inventory using weight function
+function findInInventoryWithPriority(weight)
+    local highest = 0
+    local highestId = 1
+    for i = 1,INVENTORY_SIZE do
+        local w = weight(turtle.getItemDetail(i))
+        if w ~= nil and w > highest then
+            highest = w
+            highestId = i
+        end
+    end
+    return highestId
+end     
+
 -- test whether the block in front can be gathered
 function canGather()
     local notAir, block = turtle.inspect()
@@ -86,10 +105,8 @@ end
 -- gather harvestable block and then plant something in this place
 function gatherAndPlant()
     if turtle.dig() then
-        turtle.suckUp()
         turtle.suck()
-        turtle.suckDown()
-        local slotToPlant = findInInventory(function(item) return item ~= nil and PLANTABLE[item.name] end)
+        local slotToPlant = findInInventoryWithPriority(function(item) return item and PLANTABLE[item.name] end)
         if slotToPlant == nil then
             log("Failed to plant: nothing to plant!")
         else
@@ -158,7 +175,7 @@ function rotateToDirection(direction)
 end
 
 -- move in selected direction
-function move()
+function moveForward()
     if turtle.forward() then
         if     DIRECTION == 0 then
             COORD.x = COORD.x + 1
@@ -179,9 +196,13 @@ end
 
 -- test whether we can move in selected direction
 function canMove()
-    local hasBlockInFront, _ = turtle.inspect()
+    return not turtle.detect()
+end
+
+-- test whether we are on a block we are not supposed to be on
+function movementConstraintViolated()
     local _, block = turtle.inspectDown()
-    return (not hasBlockInFront) and CAN_MOVE_OVER[block.name]
+    return not CAN_MOVE_OVER[block.name]
 end
 
 -- find move and rotate in correct direction
@@ -193,6 +214,36 @@ function findMove()
     rotate()
     return canMove()
 end
+
+-- take a move
+function move()
+    local found = false
+    if findMove() then
+        local dir = DIRECTION
+        repeat
+            if moveForward() then
+                if movementConstraintViolated() then
+                    turtle.back()
+                    rotate()
+                else 
+                    found = true
+                    break
+                end
+            else
+                error("cannot move in the direction pointed by findMove()")
+                break
+            end
+        until dir == DIRECTION
+    end
+
+    if not found then
+        log("Cannot move from this position!")
+        return false
+    end
+
+    return true
+end
+
 
 -- test whether we are in origin (i.e. place we started from)
 function isInOrigin()
@@ -248,21 +299,23 @@ end
 
 function main()
     log("Starting up...")
+    if movementConstraintViolated() then
+        error("Turtle is placed in a position to which it cannot return (due to movement constraint violation)")
+        return 1
+    end
     reset()
     while true do
         gather()
 
-        if findMove() then
-            move()
-        else
-            log("Cannot move from this position!")
-            break
+        if not move() then
+            return 1
         end
 
         if isInOrigin() then
             if not unloadProducts() then
                 log("Failed to unload products at origin, either no chest or it is full")
-                break
+                rotateToDirection(0)
+                return 1
             end
             rotateToDirection(0)
             reset()
@@ -275,14 +328,15 @@ function main()
                     log("Refueled to " .. turtle.getFuelLevel())
                 else
                     log("Failed to refuel: no fuel in inventory!")
+                    return 1
                 end
             else
                 log("Too low on fuel!")
-                break
+                return 1
             end
         end
     end
-    log("Shutting down...")
+    return 0
 end
 
 main()
