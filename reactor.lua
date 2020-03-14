@@ -1,37 +1,55 @@
-REACTOR_SIDE = "back"
+REACTOR_SIDE = "right"
+MONITOR_SIDE = "top"
+MONITOR_BACKGROUND_COLOR = colors.gray
+MONITOR_CHART_COLOR = "1" -- colors.orange
+MONITOR_CHART_BACKGROUND_COLOR = "f" -- colors.black
+MONITOR_TEXT_COLOR = colors.white
 
-UPDATE_FREQUENCY = 40
+REACTOR_STATE_CHANGE_COOLDOWN = 8
 
-ENERGY_THRESHOLD_LOW  =  3000000
-ENERGY_THRESHOLD_HIGH = 11000000
+UPDATE_FREQUENCY = 10
+
+ENERGY_THRESHOLD_LOW  = 7000000
+ENERGY_THRESHOLD_HIGH = 8000000
 
 WASTE_EJECTION_THRESHOLD = 144 * 64
 
-N_DATA_POINTS_TO_KEEP = 128
+N_DATA_POINTS_TO_KEEP = 64
 N_REGRESS = N_DATA_POINTS_TO_KEEP
 
 GOOD_TREND_REST = 0.0
 GOOD_TREND_DELTA = 500.0
 
 SHOW_CHART = true
-SHOW_CHART_EACH_TICK = 10
 
 CHART_W = 32
 CHART_H = 10
-CHART_FILL = "#"
-CHART_EMPTY = " "
-CHART_FILL_TREND = "."
-
--- print message with a timestamp
-function log(message)
-    print("[" .. os.date() .. " " .. os.time() .. "] " .. message)
-end
 
 -- sleep for a specified number of ticks
 function sleep(ticks)
     local t = (1 / 20) * ticks
-    log("Sleeping for " .. t .. "s ...")
     os.sleep(t)
+end
+
+
+function closeTo(x, val, delta)
+    return math.abs(x - val) < delta
+end
+
+
+function crlf(monitor)
+    local x, y = monitor.getCursorPos()
+    monitor.setCursorPos(1, y + 1)
+end
+
+
+function connectMonitor(side)
+    local monitor = peripheral.wrap(side)
+    monitor.setTextScale(0.5)
+    monitor.setBackgroundColor(MONITOR_BACKGROUND_COLOR)
+    monitor.clear()
+    monitor.setCursorPos(1, 1)
+    return monitor
 end
 
 -- connect to a reactor at specified side
@@ -125,72 +143,145 @@ end
 -- prints out the bar chart, showing the series and trend.
 -- - will truncate series at `w` points, drawing one index per column
 -- - min, max and trendB are printed out below the chart
-function barChartWithTrend(series, w, h, fill, empty, trendA, trendB, trendFill)
+function barChartWithTrend(monitor, series, w, h, trendA, trendB)
     local min, max = getMinMax(series, w)
+
+    local fill = "."
+    local empty = "."
+    local trendFill = "."
 
     local function interp(val)
         return h - math.ceil((val - min) / (max - min) * h)
     end
 
+    local trendColor;
+    if trendB <= 0 then
+        trendColor = "e" -- colors.red
+    else
+        trendColor = "d" -- colors.green
+    end
+
+    local x, y = monitor.getCursorPos()
+    monitor.setCursorPos(1, y)
+
+    local mW, mH = monitor.getSize()
+    local seriesCutoff = 0
+    if w > mW then
+        -- TODO this feels hacky, implement cleaner solution?
+        local realLength = 0
+        for i = 1,w do
+            if series[i] == nil then 
+                realLength = i
+                break 
+            end
+        end
+        if realLength > mW then
+            seriesCutoff = realLength - mW
+        end
+    end
+
     for i = 1, h - 1 do
         local line = ""
+        local colors = ""
+        
         for j = 1, w do
-            local trendY = trendA + trendB * j
-
+            local trendY = trendA + trendB * (j + seriesCutoff)
             local trend = interp(trendY)
+
             if trend == i then
                 line = line .. trendFill
+                colors = colors .. trendColor
             else
                 if series[j] == nil then
+                    line = line .. string.rep(empty, w - j + 1)
+                    colors  = colors .. string.rep(MONITOR_CHART_BACKGROUND_COLOR, w - j + 1)
                     break
                 end
 
-                local sh = interp(series[j])
+                local sh = interp(series[j + seriesCutoff])
 
                 if sh <= i then
                     line = line .. fill
+                    colors = colors .. MONITOR_CHART_COLOR
                 else
                     line = line .. empty
+                    colors = colors .. MONITOR_CHART_BACKGROUND_COLOR
                 end
             end
         end
-        print(line)
+        monitor.blit(line, colors, colors)
+        crlf(monitor)
     end
-    print(string.format("|min = %8d, max = %8d, trend = %.1f", min, max, trendB))
+
+    monitor.setTextColor(MONITOR_TEXT_COLOR)
+    monitor.write(string.format("min = %8d, max = %8d, trend = %8d", min, max, trendB))
+    crlf(monitor)
 end
 
 
-function closeTo(x, val, delta)
-    return math.abs(x - val) < delta
-end
 
 
 -- main loop
 function main()
     local reactor = connectReactor(REACTOR_SIDE)
     if reactor == nil then return end
+    print(
+        "Connected reactor | " .. REACTOR_SIDE .. 
+        ", # control rods: " .. reactor.getNumberOfControlRods()
+    )
 
-    print("Connected reactor (" .. side .. ", # control rods: " .. reactor.getNumberOfControlRods() .. ").")
+    local monitor = connectMonitor(MONITOR_SIDE)
+    local monW, monH = monitor.getSize()
+    if monitor ~= nil then
+        print(
+            "Connected monitor | " .. MONITOR_SIDE .. 
+            ", color = " .. tostring(monitor.isColor()) .. 
+            ", res: " .. tostring(monW) .. "x" .. tostring(monH)
+        )
+    end
+
 
     local dataPoints = {}
     local tickN = 0
+    local lastReactorStateChange = 0
+    local lastTrend = 0
 
     while true do
         local energy = reactor.getEnergyStored()
 
         pushPoint(dataPoints, N_DATA_POINTS_TO_KEEP, energy)
+        -- printSeries(dataPoints, N_DATA_POINTS_TO_KEEP)
 
         local a, b = regress(dataPoints, N_REGRESS)
+
+        local waste = reactor.getWasteAmount()
+        if waste > WASTE_EJECTION_THRESHOLD then
+            reactor.doEjectWaste()
+        end
+
+        monitor.setBackgroundColor(MONITOR_BACKGROUND_COLOR)
+        monitor.clear()
+        monitor.setCursorPos(1, 1)
+
+        if SHOW_CHART then
+            barChartWithTrend(monitor, dataPoints, monW, monH - 4, a, b)
+        end
 
         if (energy + b) < ENERGY_THRESHOLD_LOW then
             -- TODO: more sophisticated strategy?
             local allControlRodLevels = reactor.getControlRodLevel(0)
             local newLevels = allControlRodLevels - 1
-            if newLevels >= 0 then
-                print("! control rod levels: " .. tostring(allControlRodLevels) .. " -> " .. tostring(newLevels))
-                reactor.setAllControlRodLevels(newLevels)
-            else
-                print("!!! energy underprovisioning, cannot increase production any further !!!")
+            if tickN - lastReactorStateChange > REACTOR_STATE_CHANGE_COOLDOWN and b <= lastTrend then
+                if newLevels >= 0 then
+                    monitor.write("! control rod levels: " .. tostring(allControlRodLevels) .. " -> " .. tostring(newLevels))
+                    crlf(monitor)
+                    lastReactorStateChange = tickN
+                    reactor.setAllControlRodLevels(newLevels)
+                else
+                    monitor.setBackgroundColor(colors.red)
+                    monitor.write("!!! energy underprovisioning, cannot increase production any further !!!")
+                    crlf(monitor)
+                end
             end
         end
 
@@ -199,24 +290,22 @@ function main()
             -- TODO: more sophisticated strategy?
             local allControlRodLevels = reactor.getControlRodLevel(0)
             local newLevels = allControlRodLevels + 1
-            if newLevels <= 99 then
-                print("! control rod levels: " .. tostring(allControlRodLevels) .. " -> " .. tostring(newLevels))
-                reactor.setAllControlRodLevels(newLevels)
-            else
-                print("!!! energy overprovisioning, cannot decrease production any further !!!")
+            if tickN - lastReactorStateChange > REACTOR_STATE_CHANGE_COOLDOWN and b >= lastTrend then
+                if newLevels <= 99 then
+                    monitor.write("! control rod levels: " .. tostring(allControlRodLevels) .. " -> " .. tostring(newLevels))
+                    crlf(monitor)
+                    lastReactorStateChange = tickN
+                    reactor.setAllControlRodLevels(newLevels)
+                else
+                    monitor.setBackgroundColor(colors.red)
+                    monitor.write("!!! energy overprovisioning, cannot decrease production any further !!!")
+                    crlf(monitor)
+                end
             end
         end
 
-        local waste = reactor.getWasteAmount()
-        if waste > WASTE_EJECTION_THRESHOLD then
-            reactor.doEjectWaste()
-        end
-
-        if SHOW_CHART and (tickN % SHOW_CHART_EACH_TICK == 0) then
-            barChartWithTrend(dataPoints, CHART_W, CHART_H, CHART_FILL, CHART_EMPTY, a, b, CHART_FILL_TREND)
-        end
-
         tickN = tickN + 1
+        lastTrend = b
         sleep(UPDATE_FREQUENCY)
     end
 
