@@ -1,16 +1,16 @@
 REACTOR_SIDE = "right"
-MONITOR_SIDE = "top"
+MONITOR_SIDE = "monitor_0"
 MONITOR_BACKGROUND_COLOR = colors.gray
 MONITOR_CHART_COLOR = "1" -- colors.orange
 MONITOR_CHART_BACKGROUND_COLOR = "f" -- colors.black
 MONITOR_TEXT_COLOR = colors.white
 
-REACTOR_STATE_CHANGE_COOLDOWN = 8
+REACTOR_STATE_CHANGE_COOLDOWN = 4
 
 UPDATE_FREQUENCY = 10
 
-ENERGY_THRESHOLD_LOW  = 7000000
-ENERGY_THRESHOLD_HIGH = 8000000
+ENERGY_THRESHOLD_LOW  = 7500000
+ENERGY_THRESHOLD_HIGH = 7700000
 
 WASTE_EJECTION_THRESHOLD = 144 * 64
 
@@ -267,6 +267,14 @@ function main()
             barChartWithTrend(monitor, dataPoints, monW, monH - 4, a, b)
         end
 
+        monitor.setTextColor(colors.yellow)
+        monitor.write(
+            "levels: " .. tostring(reactor.getControlRodLevel(0)) .. 
+            " / fuel: " .. tostring(reactor.getFuelAmount()) ..
+            " / waste: " .. tostring(reactor.getWasteAmount()) 
+        )
+        crlf(monitor)
+
         if (energy + b) < ENERGY_THRESHOLD_LOW then
             -- TODO: more sophisticated strategy?
             local allControlRodLevels = reactor.getControlRodLevel(0)
@@ -283,10 +291,8 @@ function main()
                     crlf(monitor)
                 end
             end
-        end
-
         -- TODO review this condition
-        if (energy + b) > ENERGY_THRESHOLD_HIGH or closeTo(b, GOOD_TREND_REST, GOOD_TREND_DELTA) then
+        elseif (energy + b) > ENERGY_THRESHOLD_HIGH or closeTo(b, GOOD_TREND_REST, GOOD_TREND_DELTA) then
             -- TODO: more sophisticated strategy?
             local allControlRodLevels = reactor.getControlRodLevel(0)
             local newLevels = allControlRodLevels + 1
